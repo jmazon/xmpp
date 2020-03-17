@@ -19,11 +19,12 @@ import Debug.Trace
 
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
-import qualified Data.ByteString.Base64 as B64
+import qualified Codec.Base64 as B64
 
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Data.Text.Encoding as Text
+import qualified Data.Text.IO as Text
 
 import qualified Network.DNS as DNS
 import Network.DNS (Labels(..),SRV(..))
@@ -42,11 +43,11 @@ import Data.XML.Types
 
 import Xmpp
 
-resolveSRV :: ByteString -> IO (DNS.Name,Int)
+resolveSRV :: Text -> IO (DNS.Name,Int)
 resolveSRV domain = do
   let service = "_xmpp-client" -- xmpp-server for S2S
       proto = "_tcp"
-      Just nameLabels = DNS.toLabels (DNS.Name domain) -- origin domain [TLS-CERTS]
+      Just nameLabels = DNS.toLabels (DNS.Name (Text.encodeUtf8 domain)) -- origin domain [TLS-CERTS]
   ttlServs <- DNS.querySRV (DNS.fromLabels $ service :.: proto :.: nameLabels)
   traceShowM ttlServs
   case ttlServs of
@@ -54,7 +55,7 @@ resolveSRV domain = do
     -- TODO actually follow DNS-SRV rules (XMPP 3.2.1.4)
     ((_,SRV{srvTarget,srvPort}):_) -> pure (srvTarget,fromIntegral srvPort)
 
-resolve :: ByteString -> IO (DNS.Name,Int)
+resolve :: Text -> IO (DNS.Name,Int)
 resolve domain = do
   -- preferred: DNS-SRV
   resolveSRV domain
@@ -76,7 +77,8 @@ tlsSink = do
       _ -> loop
 
 -- TODO make TLS optional (with warning)
-withTLS :: (DNS.Name,Int) -> ByteString -> (ConduitT ByteString ByteString IO ()) -> IO ()
+withTLS :: (DNS.Name,Int) -> Text -> (ConduitT ByteString ByteString IO ())
+        -> IO ()
 withTLS (DNS.Name dest,port) domain action = do
   let config = (tlsClientConfig port dest) { tlsClientTLSSettings = def { settingDisableCertificateValidation = True } }
   runTLSClientStartTLS config $ \(appData,startTLS) -> do
@@ -86,20 +88,20 @@ withTLS (DNS.Name dest,port) domain action = do
       appSource appData .| action .| appSink appData
       traceM "end of conduit"
 
-openStream :: ByteString -> ConduitT i ByteString IO ()
+openStream :: Text -> ConduitT i ByteString IO ()
 openStream domain = do
   yield "<?xml version='1.0'?>"
   yield (EventBeginElement streamTag
-           [ ("to"      ,[ContentText (Text.decodeUtf8 domain)])
+           [ ("to"      ,[ContentText domain])
            , ("version" ,[ContentText "1.0"])
            , ("xml:lang",[ContentText "en"])
            , ("xmlns"   ,[ContentText "jabber:client"]) ])
     .| X.renderBytes def
 
-emitSaslPlain :: PrimMonad m => ByteString -> ByteString
+emitSaslPlain :: PrimMonad m => Text -> Text
               -> ConduitT a ByteString m ()
 emitSaslPlain userName pwd = do
-  let base64 = Text.decodeUtf8 $ B64.encode ("\0" <> userName <> "\0" <> pwd)
+  let base64 = B64.encode $ Text.encodeUtf8 ("\0" <> userName <> "\0" <> pwd)
   flip fuse (X.renderBytes def) $ do
     yield $ EventBeginElement authTag [("mechanism",[ContentText "PLAIN"])]
     yield $ EventContent (ContentText base64)
@@ -195,7 +197,7 @@ recvBind = tag' (tagIs iqTag) (attr "id" *> attr "type") $ \case
     tag' (tagIs bindJidTag) (pure ()) $ \_ ->
     content
 
-process :: ByteString -> ByteString -> ByteString -> IO ()
+process :: Text -> Text -> Text -> IO ()
 process userName domain password = do
   dest <- resolve domain
   -- TODO follow connection spec XMPP3.1 more closely
@@ -225,15 +227,15 @@ process userName domain password = do
 
 main :: IO ()
 main = do
-  account <- BS.readFile "account"
-  password <- BS.readFile "password"
+  account <- Text.readFile "account"
+  password <- Text.readFile "password"
   let (userName,domain) = parseBareJid account
   process userName domain password
 
-parseBareJid :: ByteString -> (ByteString,ByteString)
+parseBareJid :: Text -> (Text,Text)
 parseBareJid account = (userName,domain)
-  where (userName,rest) = BS.break (== fromIntegral (ord '@')) account
-        domain = BS.tail rest
+  where (userName,rest) = Text.break (== '@') account
+        domain = Text.tail rest
 
 startTls :: PrimMonad m => ConduitT i ByteString m ()
 startTls = flip fuse (X.renderBytes def) $ do

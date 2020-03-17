@@ -32,6 +32,7 @@ dependencies:
 - connection >= 0.3.1
 - base64-bytestring >= 1.0.0.3
 - text >= 1.2.4.0
+- base-encoding >= 0.1.0.0
 
 library:
   source-dirs: src

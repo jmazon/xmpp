@@ -40,6 +40,8 @@ packages:
 #   commit: e7b331f14bcffb8367cd58fbfc8b40ec7642100a
 #
 # extra-deps: []
+extra-deps:
+- base-encoding-0.1.0.0@sha256:5d1bef40daf8520782f7f20c33ece9f6fec1a31c4c437f3a01f3e83f80de8e3a,1478
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
