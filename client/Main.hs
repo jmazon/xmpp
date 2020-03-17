@@ -204,25 +204,25 @@ process userName domain password = do
   -- TODO XMPP3.2 fallbacks
   -- TODO handle XMPP3.3 reconnection
   -- TODO investigate XMPP3.4 reliability
-  withTLS dest domain $ do
+  withTLS dest domain $ parseBytesPos def .| do
     openStream domain
-
     -- TODO: implement other SASL
     emitSaslPlain userName password
-    parseBytesPos def .| do
-      C.map snd .| saslPlainSink
+    C.map snd .| saslPlainSink
 
-      openStream domain
-      Just (_,EventBeginElement streamOpenTag streamOpenAttrs) <- await
-      liftIO $ guard (streamOpenTag == streamTag)
-      traceShowM streamOpenAttrs
-      fts <- C.map snd .| features
-      traceShowM fts
-      emitBind (Just "alpha")
-      Just jid <- C.map snd .| recvBind
-      traceM $ "Bound JID: " ++ Text.unpack jid
-      C.map snd .| (fix $ \loop -> (dumpTag >>= traceShowM) *> loop)
+    openStream domain
+    Just (_,EventBeginElement streamOpenTag streamOpenAttrs) <- await
+    liftIO $ guard (streamOpenTag == streamTag)
+    traceShowM streamOpenAttrs
 
+    fts <- C.map snd .| features
+    traceShowM fts
+
+    emitBind (Just "alpha")
+    Just jid <- C.map snd .| recvBind
+    traceM $ "Bound JID: " ++ Text.unpack jid
+
+    C.map snd .| (fix $ \loop -> (dumpTag >>= traceShowM) *> loop)
     -- exchangeStanzas
 
 main :: IO ()
