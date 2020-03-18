@@ -144,7 +144,7 @@ feature = choose [featureBind,featureSession,featureCaps,featureSm,featureRoster
 tagIs :: Name -> NameMatcher Name
 tagIs tag = matching (== tag)
 
-featureBind = tag' (tagIs bindTag) (pure ()) (\_ -> pure FeatureBind)
+featureBind = tag' (tagIs bindTag) (pure ()) $ \_ -> pure FeatureBind
 
 featureSession = tag' sessionTag (pure ())
                    (\_ -> tag' (matching $ (== "optional") . nameLocalName)
@@ -210,20 +210,25 @@ process userName domain password = do
     emitSaslPlain userName password
     C.map snd .| saslPlainSink
 
-    openStream domain
-    Just (_,EventBeginElement streamOpenTag streamOpenAttrs) <- await
-    liftIO $ guard (streamOpenTag == streamTag)
-    traceShowM streamOpenAttrs
+    runStream domain
 
-    fts <- C.map snd .| features
-    traceShowM fts
+runStream :: Text -> ConduitT EventPos ByteString m ()
+runStream domain = do
+  traceM "Starting client stream"
+  openStream domain
+  Just (_,EventBeginElement streamOpenTag streamOpenAttrs) <- await
+  liftIO $ guard (streamOpenTag == streamTag)
+  traceShowM streamOpenAttrs
 
-    emitBind (Just "alpha")
-    Just jid <- C.map snd .| recvBind
-    traceM $ "Bound JID: " ++ Text.unpack jid
+  fts <- C.map snd .| features
+  traceShowM fts
 
-    C.map snd .| (fix $ \loop -> (dumpTag >>= traceShowM) *> loop)
-    -- exchangeStanzas
+  emitBind (Just "alpha")
+  Just jid <- C.map snd .| recvBind
+  traceM $ "Bound JID: " ++ Text.unpack jid
+
+  C.map snd .| (fix $ \loop -> (dumpTag >>= traceShowM) *> loop)
+  -- exchangeStanzas
 
 main :: IO ()
 main = do
