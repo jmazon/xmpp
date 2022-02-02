@@ -88,7 +88,7 @@ withTLS (DNS.Name dest,port) domain action = do
       appSource appData .| action .| appSink appData
       traceM "end of conduit"
 
-openStream :: Text -> ConduitT i ByteString IO ()
+openStream :: PrimMonad m => Text -> ConduitT i ByteString m ()
 openStream domain = do
   yield "<?xml version='1.0'?>"
   yield (EventBeginElement streamTag
@@ -127,7 +127,7 @@ data Feature = FeatureBind
              | FeatureRosterVer
              | FeatureCsi
              | FeatureUnknown ByteString
-  deriving Show
+  deriving (Show,Eq)
 
 dumpAttrs = optionalAttrRaw (Just . traceShowId)
 
@@ -212,7 +212,7 @@ process userName domain password = do
 
     runStream domain
 
-runStream :: Text -> ConduitT EventPos ByteString m ()
+runStream :: (PrimMonad m,MonadThrow m,MonadFail m,MonadIO m) => Text -> ConduitT EventPos ByteString m ()
 runStream domain = do
   traceM "Starting client stream"
   openStream domain
@@ -220,12 +220,13 @@ runStream domain = do
   liftIO $ guard (streamOpenTag == streamTag)
   traceShowM streamOpenAttrs
 
-  fts <- C.map snd .| features
+  fts <- fromMaybe [] <$> (C.map snd .| features)
   traceShowM fts
 
-  emitBind (Just "alpha")
-  Just jid <- C.map snd .| recvBind
-  traceM $ "Bound JID: " ++ Text.unpack jid
+  when (FeatureBind `elem` fts) $ do
+    emitBind (Just "alpha")
+    Just jid <- C.map snd .| recvBind
+    traceM $ "Bound JID: " ++ Text.unpack jid
 
   C.map snd .| (fix $ \loop -> (dumpTag >>= traceShowM) *> loop)
   -- exchangeStanzas
